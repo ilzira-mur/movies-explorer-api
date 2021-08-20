@@ -43,9 +43,9 @@ mongoose.connect(mongoDbLocal, {
 app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(requestLogger);
 app.use(limiter);
 app.use(router);
-app.use(requestLogger);
 app.use(errorLogger);
 app.use(errors());
 app.use(errorHandler);
