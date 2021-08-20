@@ -1,21 +1,21 @@
 const jwt = require('jsonwebtoken');
+const { UnauthorizedMessage } = require('../configs/constants');
 
 const { NODE_ENV, JWT_SECRET } = require('../configs/index');
 const Unauthorized = require('../errors/Unauthorized');
 
-// eslint-disable-next-line consistent-return
 const auth = (req, res, next) => {
   const { authorization } = req.headers;
   try {
     if (!authorization || !authorization.startsWith('Bearer ')) {
-      throw new Unauthorized('Необходима авторизация');
+      throw new Unauthorized(UnauthorizedMessage);
     }
     let payload;
     const token = authorization.replace('Bearer ', '');
     try {
       payload = jwt.verify(token, NODE_ENV === 'production' ? JWT_SECRET : 'PrivateKey');
     } catch (err) {
-      throw new Unauthorized('Необходима авторизация');
+      next(new Unauthorized(UnauthorizedMessage));
     }
     req.user = payload;
   } catch (err) {

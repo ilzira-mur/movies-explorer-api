@@ -4,39 +4,38 @@ const NotFoundError = require('../errors/NotFoundError');
 const FaultRequest = require('../errors/FaultRequest');
 const InternalServerError = require('../errors/InternalServerError');
 const ConflicRequest = require('../errors/ConflicRequest');
+const Unauthorized = require('../errors/Unauthorized');
 const User = require('../models/user');
 const { NODE_ENV, JWT_SECRET } = require('../configs/index');
+const {
+  ConflicRequestMessage,
+  FaultRequestMessage,
+  InternalServerErrorMessage,
+  NotFoundErrorMessage,
+} = require('../configs/constants');
 
 const createUser = (req, res, next) => {
   const {
     name, email, password,
   } = req.body;
-  if (!email || !password) {
-    throw new FaultRequest('Email или пароль отсутсвует');
-  }
-  User.findOne({ email })
-    .then((user) => {
-      if (user) {
-        next(new ConflicRequest('Пользователь с таким email есть в системе'));
-      }
-      return bcrypt.hash(password, 10)
-        .then((hash) => User.create({
-          name, email, password: hash,
-        }))
-        // eslint-disable-next-line no-shadow
-        .then((user) => res.status(200).send({
-          name: user.name,
-          email: user.email,
-          _id: user._id,
-        }))
-        .catch((err) => {
-          throw new InternalServerError(`Ошибка - ${err.message}`);
-        })
-        .catch(next);
-    })
+  bcrypt.hash(password, 10)
+    .then((hash) => User.create({
+      name, email, password: hash,
+    }))
+    .then((user) => res.send({
+      name: user.name,
+      email: user.email,
+      _id: user._id,
+    }))
     .catch((err) => {
-      throw new InternalServerError(`Ошибка - ${err.message}`);
-    });
+      if (err.code === 11000) {
+        next(new ConflicRequest(ConflicRequestMessage));
+      }
+      if (err.name === 'ValidationError') {
+        next(new FaultRequest(FaultRequestMessage));
+      }
+    })
+    .catch(next);
 };
 
 const updateUserInfo = (req, res, next) => {
@@ -44,13 +43,13 @@ const updateUserInfo = (req, res, next) => {
   const id = req.user._id;
   User.findByIdAndUpdate(id, { name, email }, { new: true, runValidators: true })
     .then((user) => {
-      res.status(200).send(user);
+      res.send(user);
     })
     .catch((err) => {
       if (err.name === 'ValidationError' || err.name === 'CastError') {
-        throw new FaultRequest('Переданы некорректные данные при обновлении профиля.');
+        next(new FaultRequest(FaultRequestMessage));
       } else {
-        throw new InternalServerError(`Ошибка - ${err.message}`);
+        next(new InternalServerError(InternalServerErrorMessage`${err.message}`));
       }
     })
     .catch(next);
@@ -61,31 +60,25 @@ const login = (req, res, next) => {
   User.findUserByCredentials(email, password)
     .then((user) => {
       const token = jwt.sign({ _id: user._id }, NODE_ENV === 'production' ? JWT_SECRET : 'PrivateKey', { expiresIn: '7d' });
-      res.status(200).send({ token });
+      res.send({ token });
     })
     .catch((err) => {
-      if (err.name === 'Validation') {
-        throw new FaultRequest('Переданы некорректные данные');
-      }
-      next(err);
-    });
+      next(new Unauthorized(err.message));
+    })
+    .catch(next);
 };
 
 const getUser = (req, res, next) => {
   User.findById(req.user._id)
     .then((user) => {
       if (!user) {
-        throw new NotFoundError('Пользователь с указанным _id не найден.');
+        throw new NotFoundError(NotFoundErrorMessage);
       } else {
-        return res.status(200).send(user);
+        return res.send(user);
       }
     })
     .catch((err) => {
-      if (err.kind === 'ObjectId') {
-        throw new FaultRequest('Переданы некорректные данные.');
-      } else {
-        throw new InternalServerError(`Ошибка - ${err.message}`);
-      }
+      next(new InternalServerError(InternalServerErrorMessage`${err.message}`));
     })
     .catch(next);
 };

@@ -3,46 +3,37 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const { errors } = require('celebrate');
-const authRouter = require('./routes/auth');
-const userRouter = require('./routes/users');
-const movieRouter = require('./routes/movies');
-const NotFoundError = require('./errors/NotFoundError');
+const router = require('./routes/index');
 const { errorHandler } = require('./middlewares/errorHandler');
 const { requestLogger, errorLogger } = require('./middlewares/logger');
+const limiter = require('./middlewares/limiter');
+const { mongoDbLocal, allowedCors, defaultAllowedMethods } = require('./configs/constants');
 
 const app = express();
 
 const { PORT = 3000 } = process.env;
-
-const DEFAULT_ALLOWED_METHODS = 'GET,HEAD,PUT,PATCH,POST,DELETE';
-const ALLOWED_CORS = [
-  'http://oops.nomoredomains.club',
-  'https://oops.nomoredomains.club',
-  'http://localhost:3000',
-  'https://localhost:3000',
-];
 
 app.use((req, res, next) => {
   const { method } = req;
   const requestHeaders = req.headers['access-control-request-headers'];
   const { origin } = req.headers;
 
-  if (ALLOWED_CORS.includes(origin)) {
+  if (allowedCors.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
   }
 
   if (method === 'OPTIONS') {
-    res.header('Access-Control-Allow-Methods', DEFAULT_ALLOWED_METHODS);
+    res.header('Access-Control-Allow-Methods', defaultAllowedMethods);
     res.header('Access-Control-Allow-Headers', requestHeaders);
     res.end();
-    return res.status(200).send();
+    return res.send();
   }
 
   return next();
 });
 
-mongoose.connect('mongodb://localhost:27017/bitfilmsdb', {
+mongoose.connect(mongoDbLocal, {
   useNewUrlParser: true,
   useCreateIndex: true,
   useFindAndModify: false,
@@ -52,25 +43,11 @@ mongoose.connect('mongodb://localhost:27017/bitfilmsdb', {
 app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
-app.get('/crash-test', () => {
-  setTimeout(() => {
-    throw new Error('Сервер сейчас упадёт');
-  }, 0);
-});
-
-app.use(authRouter);
-app.use(userRouter);
-app.use(movieRouter);
-
+app.use(limiter);
+app.use(router);
 app.use(requestLogger);
 app.use(errorLogger);
 app.use(errors());
-
-app.use('*', (req, res, next) => {
-  next(new NotFoundError('Ресурс не найден'));
-});
-
 app.use(errorHandler);
 
 app.listen(PORT, () => {

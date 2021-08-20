@@ -3,14 +3,20 @@ const FaultRequest = require('../errors/FaultRequest');
 const InternalServerError = require('../errors/InternalServerError');
 const Movie = require('../models/movie');
 const Forbidden = require('../errors/Forbidden');
+const {
+  FaultRequestMessage,
+  ForbiddenMessage,
+  InternalServerErrorMessage,
+  NotFoundErrorMessage,
+} = require('../configs/constants');
 
-const getMovies = (req, res) => {
+const getMovies = (req, res, next) => {
   Movie.find({})
     .then((movies) => {
-      res.status(200).send(movies);
+      res.send(movies);
     })
     .catch((err) => {
-      throw new InternalServerError(`Ошибка - ${err.message}`);
+      next(new InternalServerError(InternalServerErrorMessage`${err.message}`));
     });
 };
 
@@ -34,12 +40,12 @@ const createMovie = (req, res, next) => {
     movieId,
     owner: req.user._id,
   })
-    .then((movie) => res.status(200).send(movie))
+    .then((movie) => res.send(movie))
     .catch((err) => {
       if (err.name === 'ValidationError') {
-        throw new FaultRequest('Переданы некорректные данные при создании записи о фильме.');
+        next(new FaultRequest(FaultRequestMessage));
       } else {
-        throw new InternalServerError(`Ошибка - ${err.message}`);
+        next(new InternalServerError(InternalServerErrorMessage`${err.message}`));
       }
     })
     .catch(next);
@@ -48,26 +54,27 @@ const createMovie = (req, res, next) => {
 const deleteMovie = (req, res, next) => {
   Movie.findById(req.params.movieId)
     .orFail(() => {
-      throw new NotFoundError('Фильм с указанным _id не найден.');
+      throw new NotFoundError(NotFoundErrorMessage);
     })
-    .then((card) => {
-      if (card.owner.toString() === req.user._id) {
+    .then((movie) => {
+      if (movie.owner.toString() === req.user._id) {
         Movie.findByIdAndRemove(req.params.movieId)
-        // eslint-disable-next-line no-shadow
-          .then((card) => {
-            res.status(200).send(card);
+          .then((movieDelete) => {
+            res.send(movieDelete);
           })
           .catch((err) => {
-            if (err.name === 'CastError') {
-              throw new NotFoundError('Фильм с указанным _id не найден.');
-            }
-            throw new InternalServerError(`Ошибка - ${err.message}`);
+            next(new InternalServerError(InternalServerErrorMessage`${err.message}`));
           })
           .catch(next);
       } else {
-        throw new Forbidden('Недостаточно прав');
+        throw new Forbidden(ForbiddenMessage);
       }
-      return res.status(200).send({ message: 'Фильм удален' });
+      return res.send({ message: 'Фильм удален' });
+    })
+    .catch((err) => {
+      if (err.name === 'CastError') {
+        next(new NotFoundError(NotFoundErrorMessage));
+      }
     })
     .catch(next);
 };
